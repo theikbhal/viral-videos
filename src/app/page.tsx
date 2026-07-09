@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoForm } from '@/components/VideoForm';
+import { BulkAddForm } from '@/components/BulkAddForm';
 import { SearchBar } from '@/components/SearchBar';
 import { Pagination } from '@/components/Pagination';
 import { Stats } from '@/components/Stats';
@@ -35,6 +36,7 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkForm, setShowBulkForm] = useState(false);
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
 
   const fetchVideos = useCallback(async (page: number = 1, searchTerm: string = '') => {
@@ -123,6 +125,36 @@ export default function Home() {
     }
   };
 
+  const handleBulkAdd = async (urls: string[]) => {
+    let success = 0;
+    const errors: string[] = [];
+
+    for (const url of urls) {
+      try {
+        const response = await fetch('/api/videos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ youtube_url: url, views: 0 }),
+        });
+        if (response.ok) {
+          success++;
+        } else {
+          const data = await response.json();
+          errors.push(data.error || url);
+        }
+      } catch {
+        errors.push(url);
+      }
+    }
+
+    setShowBulkForm(false);
+    fetchVideos(1, '');
+
+    if (errors.length > 0) {
+      alert(`Added ${success} videos. Failed: ${errors.join(', ')}`);
+    }
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
       <header className="mb-8">
@@ -138,10 +170,20 @@ export default function Home() {
           onClick={() => {
             setEditingVideo(null);
             setShowForm(true);
+            setShowBulkForm(false);
           }}
           className="px-4 py-2 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-80 transition-opacity"
         >
           + Add Video
+        </button>
+        <button
+          onClick={() => {
+            setShowForm(false);
+            setShowBulkForm(true);
+          }}
+          className="px-4 py-2 border border-black dark:border-white hover:opacity-80 transition-opacity"
+        >
+          + Bulk Add
         </button>
       </div>
 
@@ -153,6 +195,13 @@ export default function Home() {
             setShowForm(false);
             setEditingVideo(null);
           }}
+        />
+      )}
+
+      {showBulkForm && (
+        <BulkAddForm
+          onAdd={handleBulkAdd}
+          onCancel={() => setShowBulkForm(false)}
         />
       )}
 
