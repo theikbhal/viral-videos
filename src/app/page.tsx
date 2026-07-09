@@ -1,65 +1,181 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { VideoCard } from '@/components/VideoCard';
+import { VideoForm } from '@/components/VideoForm';
+import { SearchBar } from '@/components/SearchBar';
+import { Pagination } from '@/components/Pagination';
+import { Stats } from '@/components/Stats';
+
+interface Video {
+  id: string;
+  youtube_url: string;
+  title: string;
+  views: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
 
 export default function Home() {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
+  });
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+
+  const fetchVideos = useCallback(async (page: number = 1, searchTerm: string = '') => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20',
+      });
+      if (searchTerm) {
+        params.set('search', searchTerm);
+      }
+      const response = await fetch(`/api/videos?${params}`);
+      const data = await response.json();
+      setVideos(data.videos || []);
+      setPagination(data.pagination);
+    } catch (error) {
+      console.error('Error fetching videos:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVideos(pagination.page, search);
+  }, [fetchVideos, pagination.page, search]);
+
+  const handleSearch = (term: string) => {
+    setSearch(term);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({ ...prev, page }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAdd = async (video: Omit<Video, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await fetch('/api/videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(video),
+      });
+      if (response.ok) {
+        setShowForm(false);
+        fetchVideos(pagination.page, search);
+      }
+    } catch (error) {
+      console.error('Error adding video:', error);
+    }
+  };
+
+  const handleUpdate = async (video: Omit<Video, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!editingVideo) return;
+    try {
+      const response = await fetch(`/api/videos/${editingVideo.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(video),
+      });
+      if (response.ok) {
+        setEditingVideo(null);
+        fetchVideos(pagination.page, search);
+      }
+    } catch (error) {
+      console.error('Error updating video:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this video?')) return;
+    try {
+      const response = await fetch(`/api/videos/${id}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        fetchVideos(pagination.page, search);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <header className="mb-8">
+        <h1 className="text-3xl md:text-4xl font-bold mb-2">Viral Videos</h1>
+        <p className="text-[var(--muted)]">Collecting videos with 1M+ views</p>
+      </header>
+
+      <Stats total={pagination.total} />
+
+      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <SearchBar onSearch={handleSearch} />
+        <button
+          onClick={() => {
+            setEditingVideo(null);
+            setShowForm(true);
+          }}
+          className="px-4 py-2 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white hover:opacity-80 transition-opacity"
+        >
+          + Add Video
+        </button>
+      </div>
+
+      {(showForm || editingVideo) && (
+        <VideoForm
+          initialData={editingVideo}
+          onSubmit={editingVideo ? handleUpdate : handleAdd}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingVideo(null);
+          }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+      )}
+
+      {loading ? (
+        <div className="text-center py-12 text-[var(--muted)]">Loading...</div>
+      ) : videos.length === 0 ? (
+        <div className="text-center py-12 text-[var(--muted)]">
+          {search ? 'No videos found' : 'No videos yet. Add your first viral video!'}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {videos.map((video) => (
+            <VideoCard
+              key={video.id}
+              video={video}
+              onEdit={setEditingVideo}
+              onDelete={handleDelete}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          ))}
         </div>
-      </main>
+      )}
+
+      <Pagination
+        currentPage={pagination.page}
+        totalPages={pagination.totalPages}
+        onPageChange={handlePageChange}
+      />
     </div>
   );
 }
