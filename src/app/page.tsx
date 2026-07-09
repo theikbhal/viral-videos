@@ -155,14 +155,49 @@ export default function Home() {
     }
   };
 
+  const handleExportJson = async () => {
+    try {
+      const response = await fetch('/api/videos?limit=10000');
+      const data = await response.json();
+      const blob = new Blob([JSON.stringify(data.videos, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'viral-videos.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+    }
+  };
+
+  const handleExportTxt = async () => {
+    try {
+      const response = await fetch('/api/videos?limit=10000');
+      const data = await response.json();
+      const urls = data.videos.map((v: Video) => v.youtube_url).join('\n');
+      const blob = new Blob([urls], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'viral-videos.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
       <header className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">Viral Videos</h1>
         <p className="text-[var(--muted)]">Collecting videos with 1M+ views</p>
-        <div className="flex gap-4 mt-2">
+        <div className="flex flex-wrap gap-4 mt-2">
           <a href="/quick" className="text-sm underline hover:opacity-70">Quick Add →</a>
           <a href="/bulk" className="text-sm underline hover:opacity-70">Bulk Add →</a>
+          <button onClick={handleExportJson} className="text-sm underline hover:opacity-70">Export JSON</button>
+          <button onClick={handleExportTxt} className="text-sm underline hover:opacity-70">Export TXT</button>
         </div>
       </header>
 
