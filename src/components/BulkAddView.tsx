@@ -66,75 +66,112 @@ export function BulkAddView() {
     }
   };
 
-  const updateTextareaWithCheckmarks = (addedUrl?: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea || isProcessing.current) return;
-
+  const processUrls = async (text: string) => {
+    if (isProcessing.current) return;
     isProcessing.current = true;
-    const lines = textarea.value.split('\n');
 
-    const updatedLines = lines.map(line => {
+    const lines = text.split('\n');
+    let changed = false;
+    const newLines: string[] = [];
+
+    for (const line of lines) {
       const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
-      if (cleanUrl && addedUrls.current.has(normalizeUrl(cleanUrl))) {
-        return cleanUrl + ' ✅';
+
+      if (!cleanUrl || addedUrls.current.has(normalizeUrl(cleanUrl)) ||
+          !(cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be'))) {
+        newLines.push(line);
+        continue;
       }
-      return line;
-    });
 
-    let newText = updatedLines.join('\n');
-
-    if (addedUrl) {
-      const linesArr = newText.split('\n');
-      const addedLineIndex = linesArr.findIndex(l => normalizeUrl(l.replace(/\s*✅\s*$/, '').trim()) === normalizeUrl(addedUrl));
-      if (addedLineIndex >= 0) {
-        const isLastLine = addedLineIndex === linesArr.length - 1;
-        const nextLine = linesArr[addedLineIndex + 1];
-        const hasEmptyLineAfter = nextLine?.trim() === '';
-
-        if (isLastLine || !hasEmptyLineAfter) {
-          linesArr.splice(addedLineIndex + 1, 0, '');
-        }
-        newText = linesArr.join('\n');
-        textarea.value = newText;
-
-        const newLineIndex = addedLineIndex + 1;
-        const cursorPos = newText.split('\n').slice(0, newLineIndex + 1).join('\n').length;
-        textarea.selectionStart = cursorPos;
-        textarea.selectionEnd = cursorPos;
-        textarea.focus();
+      const id = await addVideo(cleanUrl);
+      if (id) {
+        addedUrls.current.set(normalizeUrl(cleanUrl), id);
+        setAllVideos(prev => [{ id, youtube_url: cleanUrl, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
+        newLines.push(cleanUrl + ' ✅');
+        setLastAdded(true);
+        setTimeout(() => setLastAdded(false), 2000);
+        changed = true;
       } else {
-        textarea.value = newText;
+        newLines.push(line);
       }
-    } else {
-      textarea.value = newText;
+    }
+
+    if (changed) {
+      const newText = newLines.join('\n');
+      setBulkUrls(newText + '\n');
+
+      setTimeout(() => {
+        const textarea = textareaRef.current;
+        if (textarea) {
+          const pos = newText.length + 1;
+          textarea.selectionStart = pos;
+          textarea.selectionEnd = pos;
+          textarea.focus();
+        }
+      }, 50);
     }
 
     isProcessing.current = false;
   };
 
-  const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (isProcessing.current) return;
-
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
-    const lines = text.split('\n');
+    setBulkUrls(text);
 
-    for (const line of lines) {
-      const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
-      if (cleanUrl && !addedUrls.current.has(normalizeUrl(cleanUrl)) &&
-          (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be'))) {
+    const lines = text.split('\n');
+    const lastLine = lines[lines.length - 1].replace(/\s*✅\s*$/, '').trim();
+    const secondLastLine = lines.length >= 2 ? lines[lines.length - 2].replace(/\s*✅\s*$/, '').trim() : '';
+
+    if (secondLastLine && (secondLastLine.includes('youtube.com') || secondLastLine.includes('youtu.be'))) {
+      processUrls(text);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    setTimeout(() => {
+      processUrls(textareaRef.current?.value || '');
+    }, 50);
+  };
+
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      const text = textarea.value;
+      const cursorPos = textarea.selectionStart;
+      const textBeforeCursor = text.substring(0, cursorPos);
+      const textAfterCursor = text.substring(cursorPos);
+      const currentLine = textBeforeCursor.split('\n').pop() || '';
+      const cleanUrl = currentLine.replace(/\s*✅\s*$/, '').trim();
+
+      if (cleanUrl && (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) &&
+          !addedUrls.current.has(normalizeUrl(cleanUrl))) {
         const id = await addVideo(cleanUrl);
         if (id) {
           addedUrls.current.set(normalizeUrl(cleanUrl), id);
           setAllVideos(prev => [{ id, youtube_url: cleanUrl, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
           setLastAdded(true);
           setTimeout(() => setLastAdded(false), 2000);
-          updateTextareaWithCheckmarks(cleanUrl);
+
+          const newText = textBeforeCursor + ' ✅\n' + textAfterCursor;
+          textarea.value = newText;
+          const newPos = cursorPos + 4;
+          textarea.selectionStart = newPos;
+          textarea.selectionEnd = newPos;
+          setBulkUrls(newText);
+          return;
         }
       }
-    }
-  };
 
-  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const newText = textBeforeCursor + '\n' + textAfterCursor;
+      textarea.value = newText;
+      textarea.selectionStart = cursorPos + 1;
+      textarea.selectionEnd = cursorPos + 1;
+      setBulkUrls(newText);
+    }
+
     if (e.key === 'Backspace') {
       const textarea = textareaRef.current;
       if (!textarea) return;
@@ -164,6 +201,7 @@ export function BulkAddView() {
           textarea.value = newText;
           textarea.selectionStart = lastNewlineBefore;
           textarea.selectionEnd = lastNewlineBefore;
+          setBulkUrls(newText);
         }
       }
     }
@@ -184,14 +222,15 @@ export function BulkAddView() {
 
       <div className="mb-6">
         <p className="text-sm text-[var(--muted)] mb-2">
-          ✅ appears when added • Backspace empty line = delete
+          Paste URL → Press Enter → ✅ appears → next line ready
         </p>
         <textarea
           ref={textareaRef}
           value={bulkUrls}
           onChange={handleChange}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder={`Paste YouTube URLs here, one per line:\nhttps://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456`}
+          placeholder={`Paste YouTube URLs here:\nhttps://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456`}
           className="w-full h-64 px-4 py-3 border border-black dark:border-white bg-transparent font-mono text-sm resize-none focus:outline-none"
           spellCheck={false}
         />
@@ -216,7 +255,6 @@ export function BulkAddView() {
                   await deleteVideo(video.id);
                   addedUrls.current.delete(normalizeUrl(video.youtube_url));
                   setAllVideos(prev => prev.filter(v => v.id !== video.id));
-                  updateTextareaWithCheckmarks();
                 }}
                 className="text-red-600 hover:underline text-xs"
               >
