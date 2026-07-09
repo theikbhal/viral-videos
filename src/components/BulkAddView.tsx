@@ -18,10 +18,10 @@ function normalizeUrl(url: string): string {
 export function BulkAddView() {
   const [allVideos, setAllVideos] = useState<Video[]>([]);
   const [bulkUrls, setBulkUrls] = useState('');
-  const [addedCount, setAddedCount] = useState(0);
-  const [processing, setProcessing] = useState(false);
+  const [lastAdded, setLastAdded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addedUrls = useRef(new Map<string, string>());
+  const isProcessing = useRef(false);
 
   const fetchVideos = useCallback(async () => {
     try {
@@ -66,87 +66,135 @@ export function BulkAddView() {
     }
   };
 
-  const handleBulkAdd = async () => {
-    setProcessing(true);
-    const lines = bulkUrls.split('\n');
-    let count = 0;
-    const newLines: string[] = [];
+  const updateTextareaWithCheckmarks = (addedUrl?: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea || isProcessing.current) return;
 
-    for (const line of lines) {
-      const url = line.replace(/\s*✅\s*$/, '').trim();
-      if (!url) {
-        newLines.push(line);
-        continue;
+    isProcessing.current = true;
+    const lines = textarea.value.split('\n');
+
+    const updatedLines = lines.map(line => {
+      const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
+      if (cleanUrl && addedUrls.current.has(normalizeUrl(cleanUrl))) {
+        return cleanUrl + ' ✅';
       }
+      return line;
+    });
 
-      const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
-      if (!isYoutube) {
-        newLines.push(line);
-        continue;
-      }
+    let newText = updatedLines.join('\n');
 
-      const normalized = normalizeUrl(url);
-      if (addedUrls.current.has(normalized)) {
-        newLines.push(url + ' ✅');
-        continue;
-      }
+    if (addedUrl) {
+      const linesArr = newText.split('\n');
+      const addedLineIndex = linesArr.findIndex(l => normalizeUrl(l.replace(/\s*✅\s*$/, '').trim()) === normalizeUrl(addedUrl));
+      if (addedLineIndex >= 0) {
+        const isLastLine = addedLineIndex === linesArr.length - 1;
+        const nextLine = linesArr[addedLineIndex + 1];
+        const hasEmptyLineAfter = nextLine?.trim() === '';
 
-      const id = await addVideo(url);
-      if (id) {
-        addedUrls.current.set(normalized, id);
-        setAllVideos(prev => [{ id, youtube_url: url, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
-        newLines.push(url + ' ✅');
-        count++;
+        if (isLastLine || !hasEmptyLineAfter) {
+          linesArr.splice(addedLineIndex + 1, 0, '');
+        }
+        newText = linesArr.join('\n');
+        textarea.value = newText;
+
+        const newLineIndex = addedLineIndex + 1;
+        const cursorPos = newText.split('\n').slice(0, newLineIndex + 1).join('\n').length;
+        textarea.selectionStart = cursorPos;
+        textarea.selectionEnd = cursorPos;
+        textarea.focus();
       } else {
-        newLines.push(url);
+        textarea.value = newText;
       }
+    } else {
+      textarea.value = newText;
     }
 
-    newLines.push('');
-    setBulkUrls(newLines.join('\n'));
-    setAddedCount(count);
-    setProcessing(false);
+    isProcessing.current = false;
+  };
 
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = textareaRef.current.value.length;
-        textareaRef.current.selectionEnd = textareaRef.current.value.length;
-        textareaRef.current.focus();
+  const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (isProcessing.current) return;
+
+    const text = e.target.value;
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
+      if (cleanUrl && !addedUrls.current.has(normalizeUrl(cleanUrl)) &&
+          (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be'))) {
+        const id = await addVideo(cleanUrl);
+        if (id) {
+          addedUrls.current.set(normalizeUrl(cleanUrl), id);
+          setAllVideos(prev => [{ id, youtube_url: cleanUrl, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
+          setLastAdded(true);
+          setTimeout(() => setLastAdded(false), 2000);
+          updateTextareaWithCheckmarks(cleanUrl);
+        }
       }
-    }, 50);
+    }
+  };
 
-    setTimeout(() => setAddedCount(0), 3000);
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Backspace') {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      const cursorPos = textarea.selectionStart;
+      const text = textarea.value;
+      const textBeforeCursor = text.substring(0, cursorPos);
+      const textAfterCursor = text.substring(cursorPos);
+      const lastNewlineBefore = textBeforeCursor.lastIndexOf('\n');
+      const currentLine = textBeforeCursor.substring(lastNewlineBefore + 1);
+
+      if (currentLine.trim() === '' && lastNewlineBefore >= 0) {
+        const linesAbove = text.substring(0, lastNewlineBefore).split('\n');
+        const prevLine = linesAbove[linesAbove.length - 1];
+        const cleanUrl = prevLine.replace(/\s*✅\s*$/, '').trim();
+        const normalized = normalizeUrl(cleanUrl);
+
+        if (addedUrls.current.has(normalized)) {
+          e.preventDefault();
+          const id = addedUrls.current.get(normalized);
+          if (id) {
+            await deleteVideo(id);
+            addedUrls.current.delete(normalized);
+            setAllVideos(prev => prev.filter(v => v.youtube_url !== cleanUrl));
+          }
+          const newText = text.substring(0, lastNewlineBefore) + textAfterCursor;
+          textarea.value = newText;
+          textarea.selectionStart = lastNewlineBefore;
+          textarea.selectionEnd = lastNewlineBefore;
+        }
+      }
+    }
   };
 
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
       <header className="mb-6">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">Bulk Add</h1>
-        <p className="text-[var(--muted)]">Paste multiple YouTube URLs, one per line.</p>
+        <p className="text-[var(--muted)]">Paste YouTube URLs, one per line. Auto-adds.</p>
       </header>
 
-      {addedCount > 0 && (
+      {lastAdded && (
         <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 text-sm z-50">
-          ✅ Added {addedCount} videos
+          ✅ Added
         </div>
       )}
 
       <div className="mb-6">
+        <p className="text-sm text-[var(--muted)] mb-2">
+          ✅ appears when added • Backspace empty line = delete
+        </p>
         <textarea
           ref={textareaRef}
           value={bulkUrls}
-          onChange={(e) => setBulkUrls(e.target.value)}
-          placeholder={`Paste YouTube URLs here, one per line:\nhttps://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456\nhttps://youtu.be/ghi789`}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          placeholder={`Paste YouTube URLs here, one per line:\nhttps://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456`}
           className="w-full h-64 px-4 py-3 border border-black dark:border-white bg-transparent font-mono text-sm resize-none focus:outline-none"
           spellCheck={false}
         />
-        <button
-          onClick={handleBulkAdd}
-          disabled={processing || !bulkUrls.trim()}
-          className="mt-2 px-4 py-2 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white text-sm disabled:opacity-50"
-        >
-          {processing ? 'Adding...' : 'Add All'}
-        </button>
       </div>
 
       <div className="border border-black dark:border-white p-4">
@@ -168,6 +216,7 @@ export function BulkAddView() {
                   await deleteVideo(video.id);
                   addedUrls.current.delete(normalizeUrl(video.youtube_url));
                   setAllVideos(prev => prev.filter(v => v.id !== video.id));
+                  updateTextareaWithCheckmarks();
                 }}
                 className="text-red-600 hover:underline text-xs"
               >
