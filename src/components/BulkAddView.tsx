@@ -97,13 +97,23 @@ export function BulkAddView() {
     }
 
     if (changed) {
-      const newText = newLines.join('\n');
-      setBulkUrls(newText + '\n');
+      const addedCount = newLines.filter(l => l.includes('✅')).length;
+      let linesToKeep: string[];
+
+      if (addedCount > 5) {
+        linesToKeep = newLines.filter(l => !l.includes('✅'));
+        linesToKeep.push('');
+      } else {
+        linesToKeep = newLines;
+      }
+
+      const newText = linesToKeep.join('\n');
+      setBulkUrls(newText);
 
       setTimeout(() => {
         const textarea = textareaRef.current;
         if (textarea) {
-          const pos = newText.length + 1;
+          const pos = newText.length;
           textarea.selectionStart = pos;
           textarea.selectionEnd = pos;
           textarea.focus();
