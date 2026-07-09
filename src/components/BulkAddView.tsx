@@ -11,6 +11,10 @@ interface Video {
   created_at: string;
 }
 
+function normalizeUrl(url: string): string {
+  return url.trim().toLowerCase().replace(/^https?:\/\/(www\.)?/, 'https://www.');
+}
+
 export function BulkAddView() {
   const [allVideos, setAllVideos] = useState<Video[]>([]);
   const [bulkUrls, setBulkUrls] = useState('');
@@ -25,7 +29,7 @@ export function BulkAddView() {
       const data = await response.json();
       setAllVideos(data.videos || []);
       data.videos?.forEach((v: Video) => {
-        addedUrls.current.set(v.youtube_url, v.id);
+        addedUrls.current.set(normalizeUrl(v.youtube_url), v.id);
       });
     } catch (error) {
       console.error('Error fetching videos:', error);
@@ -64,30 +68,53 @@ export function BulkAddView() {
 
   const handleBulkAdd = async () => {
     setProcessing(true);
-    const lines = bulkUrls.split('\n').map(l => l.trim()).filter(l => l);
+    const lines = bulkUrls.split('\n');
     let count = 0;
-    const addedLines: string[] = [];
+    const newLines: string[] = [];
 
-    for (const url of lines) {
-      if (!addedUrls.current.has(url) && (url.includes('youtube.com') || url.includes('youtu.be'))) {
-        const id = await addVideo(url);
-        if (id) {
-          addedUrls.current.set(url, id);
-          setAllVideos(prev => [{ id, youtube_url: url, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
-          addedLines.push(url + ' ✅');
-          count++;
-        } else {
-          addedLines.push(url);
-        }
+    for (const line of lines) {
+      const url = line.replace(/\s*✅\s*$/, '').trim();
+      if (!url) {
+        newLines.push(line);
+        continue;
+      }
+
+      const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+      if (!isYoutube) {
+        newLines.push(line);
+        continue;
+      }
+
+      const normalized = normalizeUrl(url);
+      if (addedUrls.current.has(normalized)) {
+        newLines.push(url + ' ✅');
+        continue;
+      }
+
+      const id = await addVideo(url);
+      if (id) {
+        addedUrls.current.set(normalized, id);
+        setAllVideos(prev => [{ id, youtube_url: url, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
+        newLines.push(url + ' ✅');
+        count++;
       } else {
-        addedLines.push(url + ' ✅');
+        newLines.push(url);
       }
     }
 
-    setBulkUrls(addedLines.join('\n'));
+    newLines.push('');
+    setBulkUrls(newLines.join('\n'));
     setAddedCount(count);
     setProcessing(false);
-    textareaRef.current?.focus();
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.selectionStart = textareaRef.current.value.length;
+        textareaRef.current.selectionEnd = textareaRef.current.value.length;
+        textareaRef.current.focus();
+      }
+    }, 50);
+
     setTimeout(() => setAddedCount(0), 3000);
   };
 
@@ -139,7 +166,7 @@ export function BulkAddView() {
               <button
                 onClick={async () => {
                   await deleteVideo(video.id);
-                  addedUrls.current.delete(video.youtube_url);
+                  addedUrls.current.delete(normalizeUrl(video.youtube_url));
                   setAllVideos(prev => prev.filter(v => v.id !== video.id));
                 }}
                 className="text-red-600 hover:underline text-xs"
