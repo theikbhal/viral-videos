@@ -66,6 +66,7 @@ export function BulkAddView() {
     setProcessing(true);
     const lines = bulkUrls.split('\n').map(l => l.trim()).filter(l => l);
     let count = 0;
+    const addedLines: string[] = [];
 
     for (const url of lines) {
       if (!addedUrls.current.has(url) && (url.includes('youtube.com') || url.includes('youtu.be'))) {
@@ -73,13 +74,18 @@ export function BulkAddView() {
         if (id) {
           addedUrls.current.set(url, id);
           setAllVideos(prev => [{ id, youtube_url: url, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
+          addedLines.push(url + ' ✅');
           count++;
+        } else {
+          addedLines.push(url);
         }
+      } else {
+        addedLines.push(url + ' ✅');
       }
     }
 
+    setBulkUrls(addedLines.join('\n'));
     setAddedCount(count);
-    setBulkUrls('');
     setProcessing(false);
     textareaRef.current?.focus();
     setTimeout(() => setAddedCount(0), 3000);
