@@ -59,7 +59,7 @@ export function LiveAddView() {
     }
   };
 
-  const updateTextareaWithCheckmarks = () => {
+  const updateTextareaWithCheckmarks = (addedUrl?: string) => {
     const textarea = textareaRef.current;
     if (!textarea || isUpdating.current) return;
 
@@ -74,7 +74,33 @@ export function LiveAddView() {
       return line;
     });
 
-    textarea.value = updatedLines.join('\n');
+    let newText = updatedLines.join('\n');
+
+    if (addedUrl) {
+      const linesArr = newText.split('\n');
+      const addedLineIndex = linesArr.findIndex(l => l.includes(addedUrl));
+      if (addedLineIndex >= 0) {
+        const isLastLine = addedLineIndex === linesArr.length - 1;
+        const hasEmptyLineAfter = linesArr[addedLineIndex + 1]?.trim() === '';
+
+        if (isLastLine || !hasEmptyLineAfter) {
+          linesArr.splice(addedLineIndex + 1, 0, '');
+        }
+        newText = linesArr.join('\n');
+        textarea.value = newText;
+
+        const newLineIndex = addedLineIndex + 1;
+        const cursorPos = newText.split('\n').slice(0, newLineIndex + 1).join('\n').length;
+        textarea.selectionStart = cursorPos;
+        textarea.selectionEnd = cursorPos;
+        textarea.focus();
+      } else {
+        textarea.value = newText;
+      }
+    } else {
+      textarea.value = newText;
+    }
+
     isUpdating.current = false;
   };
 
@@ -99,7 +125,7 @@ export function LiveAddView() {
             notes: '',
             created_at: new Date().toISOString(),
           }]);
-          updateTextareaWithCheckmarks();
+          updateTextareaWithCheckmarks(cleanUrl);
         }
       }
     }
