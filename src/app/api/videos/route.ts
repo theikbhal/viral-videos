@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
   }
 
   query = query
-    .gte('views', 1000000)
     .order('views', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -48,13 +47,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'YouTube URL is required' }, { status: 400 });
   }
 
-  if (!views || views < 1000000) {
-    return NextResponse.json({ error: 'Minimum 1,000,000 views required' }, { status: 400 });
-  }
-
   const { data, error } = await supabase
     .from('viral_videos')
-    .insert([{ youtube_url, title, views, notes }])
+    .insert([{ youtube_url, title, views: views || 0, notes }])
     .select()
     .single();
 

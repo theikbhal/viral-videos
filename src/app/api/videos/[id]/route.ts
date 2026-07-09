@@ -30,10 +30,6 @@ export async function PUT(
   const body = await request.json();
   const { youtube_url, title, views, notes } = body;
 
-  if (views !== undefined && views < 1000000) {
-    return NextResponse.json({ error: 'Minimum 1,000,000 views required' }, { status: 400 });
-  }
-
   const { data, error } = await supabase
     .from('viral_videos')
     .update({ youtube_url, title, views, notes, updated_at: new Date().toISOString() })

@@ -16,6 +16,26 @@ interface VideoFormProps {
   onCancel: () => void;
 }
 
+function parseViews(input: string): number {
+  const trimmed = input.trim().toUpperCase();
+  if (!trimmed) return 0;
+
+  const multipliers: Record<string, number> = {
+    'K': 1000,
+    'M': 1000000,
+    'B': 1000000000,
+  };
+
+  for (const [suffix, multiplier] of Object.entries(multipliers)) {
+    if (trimmed.endsWith(suffix)) {
+      const num = parseFloat(trimmed.slice(0, -suffix));
+      return isNaN(num) ? 0 : Math.round(num * multiplier);
+    }
+  }
+
+  return parseInt(trimmed) || 0;
+}
+
 export function VideoForm({ initialData, onSubmit, onCancel }: VideoFormProps) {
   const [youtubeUrl, setYoutubeUrl] = useState(initialData?.youtube_url || '');
   const [title, setTitle] = useState(initialData?.title || '');
@@ -32,16 +52,10 @@ export function VideoForm({ initialData, onSubmit, onCancel }: VideoFormProps) {
       return;
     }
 
-    const viewCount = parseInt(views) || 0;
-    if (viewCount < 1000000) {
-      setError('Minimum 1,000,000 views required');
-      return;
-    }
-
     onSubmit({
       youtube_url: youtubeUrl,
       title,
-      views: viewCount,
+      views: parseViews(views),
       notes,
     });
   };
@@ -57,7 +71,7 @@ export function VideoForm({ initialData, onSubmit, onCancel }: VideoFormProps) {
             YouTube URL *
           </label>
           <input
-            type="url"
+            type="text"
             value={youtubeUrl}
             onChange={(e) => setYoutubeUrl(e.target.value)}
             placeholder="https://youtube.com/shorts/..."
@@ -77,16 +91,14 @@ export function VideoForm({ initialData, onSubmit, onCancel }: VideoFormProps) {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
-            Views * (min 1,000,000)
+            Views (e.g., 8.7M, 500K, 2.3B)
           </label>
           <input
-            type="number"
+            type="text"
             value={views}
             onChange={(e) => setViews(e.target.value)}
-            placeholder="1000000"
-            min="1000000"
+            placeholder="8.7M"
             className="w-full px-3 py-2 border border-black dark:border-white bg-transparent"
-            required
           />
         </div>
         <div>
