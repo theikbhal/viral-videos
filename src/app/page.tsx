@@ -79,12 +79,16 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(video),
       });
+      const data = await response.json();
       if (response.ok) {
         setShowForm(false);
         fetchVideos(pagination.page, search);
+      } else {
+        alert(data.error || 'Failed to add video');
       }
     } catch (error) {
       console.error('Error adding video:', error);
+      alert('Error adding video');
     }
   };
 
