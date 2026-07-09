@@ -12,16 +12,19 @@ interface Video {
 }
 
 export function LiveAddView() {
-  const [lines, setLines] = useState<{ url: string; id?: string; status: 'pending' | 'added' | 'error' }[]>([]);
   const [allVideos, setAllVideos] = useState<Video[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const processedUrls = useRef(new Set<string>());
+  const addedUrls = useRef(new Map<string, string>());
+  const isUpdating = useRef(false);
 
   const fetchVideos = useCallback(async () => {
     try {
       const response = await fetch('/api/videos?limit=1000');
       const data = await response.json();
       setAllVideos(data.videos || []);
+      data.videos?.forEach((v: Video) => {
+        addedUrls.current.set(v.youtube_url, v.id);
+      });
     } catch (error) {
       console.error('Error fetching videos:', error);
     }
@@ -56,72 +59,81 @@ export function LiveAddView() {
     }
   };
 
+  const updateTextareaWithCheckmarks = () => {
+    const textarea = textareaRef.current;
+    if (!textarea || isUpdating.current) return;
+
+    isUpdating.current = true;
+    const lines = textarea.value.split('\n');
+
+    const updatedLines = lines.map(line => {
+      const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
+      if (addedUrls.current.has(cleanUrl)) {
+        return cleanUrl + ' ✅';
+      }
+      return line;
+    });
+
+    textarea.value = updatedLines.join('\n');
+    isUpdating.current = false;
+  };
+
   const handleChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (isUpdating.current) return;
+
     const text = e.target.value;
     const newLines = text.split('\n');
 
-    const currentUrls = newLines
-      .map(line => line.trim())
-      .filter(line => line.includes('youtube.com') || line.includes('youtu.be'));
-
-    const currentLineStates = newLines.map((line, index) => {
-      const url = line.trim();
-      const existing = lines.find(l => l.url === url && l.url);
-      if (existing) return existing;
-
-      if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
-        return { url, status: 'pending' as const };
-      }
-      return { url: line, status: 'pending' as const };
-    });
-
-    setLines(currentLineStates);
-
-    for (const line of currentLineStates) {
-      if (line.url && !line.id && !processedUrls.current.has(line.url) &&
-          (line.url.includes('youtube.com') || line.url.includes('youtu.be'))) {
-        processedUrls.current.add(line.url);
-        const id = await addVideo(line.url);
+    for (const line of newLines) {
+      const cleanUrl = line.replace(/\s*✅\s*$/, '').trim();
+      if (cleanUrl && !addedUrls.current.has(cleanUrl) &&
+          (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be'))) {
+        const id = await addVideo(cleanUrl);
         if (id) {
-          setLines(prev => prev.map(l =>
-            l.url === line.url ? { ...l, id, status: 'added' } : l
-          ));
+          addedUrls.current.set(cleanUrl, id);
+          setAllVideos(prev => [...prev, {
+            id,
+            youtube_url: cleanUrl,
+            title: '',
+            views: 0,
+            notes: '',
+            created_at: new Date().toISOString(),
+          }]);
+          updateTextareaWithCheckmarks();
         }
       }
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Backspace') {
       const textarea = textareaRef.current;
       if (!textarea) return;
 
       const cursorPos = textarea.selectionStart;
       const text = textarea.value;
-
       const textBeforeCursor = text.substring(0, cursorPos);
       const textAfterCursor = text.substring(cursorPos);
-
       const lastNewlineBefore = textBeforeCursor.lastIndexOf('\n');
       const currentLine = textBeforeCursor.substring(lastNewlineBefore + 1);
 
       if (currentLine.trim() === '' && lastNewlineBefore >= 0) {
-        e.preventDefault();
+        const linesAbove = text.substring(0, lastNewlineBefore).split('\n');
+        const prevLine = linesAbove[linesAbove.length - 1];
+        const cleanUrl = prevLine.replace(/\s*✅\s*$/, '').trim();
 
-        const lineIndex = textBeforeCursor.split('\n').length - 2;
-        if (lineIndex >= 0 && lineIndex < lines.length) {
-          const lineToDelete = lines[lineIndex];
-          if (lineToDelete.id) {
-            deleteVideo(lineToDelete.id);
-            processedUrls.current.delete(lineToDelete.url);
+        if (addedUrls.current.has(cleanUrl)) {
+          e.preventDefault();
+          const id = addedUrls.current.get(cleanUrl);
+          if (id) {
+            await deleteVideo(id);
+            addedUrls.current.delete(cleanUrl);
+            setAllVideos(prev => prev.filter(v => v.youtube_url !== cleanUrl));
           }
-
           const newText = text.substring(0, lastNewlineBefore) + textAfterCursor;
           textarea.value = newText;
           textarea.selectionStart = lastNewlineBefore;
           textarea.selectionEnd = lastNewlineBefore;
-
-          setLines(prev => prev.filter((_, i) => i !== lineIndex));
         }
       }
     }
@@ -136,13 +148,13 @@ export function LiveAddView() {
 
       <div className="mb-4 p-4 border border-black dark:border-white">
         <p className="text-sm text-[var(--muted)] mb-2">
-          ✅ Added = saved to database • Press Backspace on empty line to delete
+          ✅ appears when video is saved • Backspace empty line = delete from DB
         </p>
         <textarea
           ref={textareaRef}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={`https://youtube.com/shorts/abc123 ✅\nhttps://youtube.com/shorts/def456\nhttps://youtu.be/ghi789 ✅`}
+          placeholder={`https://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456\nhttps://youtu.be/ghi789`}
           className="w-full h-96 px-4 py-3 border border-black dark:border-white bg-transparent font-mono text-sm resize-none focus:outline-none"
           spellCheck={false}
         />
@@ -163,11 +175,11 @@ export function LiveAddView() {
                 {video.youtube_url}
               </a>
               <button
-                onClick={() => {
-                  deleteVideo(video.id);
-                  processedUrls.current.delete(video.youtube_url);
-                  setLines(prev => prev.filter(l => l.id !== video.id));
+                onClick={async () => {
+                  await deleteVideo(video.id);
+                  addedUrls.current.delete(video.youtube_url);
                   setAllVideos(prev => prev.filter(v => v.id !== video.id));
+                  updateTextareaWithCheckmarks();
                 }}
                 className="text-sm text-red-600 hover:underline"
               >
