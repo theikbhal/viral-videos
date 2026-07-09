@@ -13,9 +13,13 @@ interface Video {
 
 export function LiveAddView() {
   const [allVideos, setAllVideos] = useState<Video[]>([]);
+  const [mode, setMode] = useState<'single' | 'bulk'>('single');
   const [inputValue, setInputValue] = useState('');
+  const [bulkUrls, setBulkUrls] = useState('');
   const [lastAdded, setLastAdded] = useState<string | null>(null);
+  const [addedCount, setAddedCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addedUrls = useRef(new Map<string, string>());
 
   const fetchVideos = useCallback(async () => {
@@ -61,7 +65,7 @@ export function LiveAddView() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSingleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const url = inputValue.trim();
 
@@ -85,6 +89,26 @@ export function LiveAddView() {
     inputRef.current?.focus();
   };
 
+  const handleBulkAdd = async () => {
+    const lines = bulkUrls.split('\n').map(l => l.trim()).filter(l => l);
+    let count = 0;
+
+    for (const url of lines) {
+      if (!addedUrls.current.has(url) && (url.includes('youtube.com') || url.includes('youtu.be'))) {
+        const id = await addVideo(url);
+        if (id) {
+          addedUrls.current.set(url, id);
+          setAllVideos(prev => [{ id, youtube_url: url, title: '', views: 0, notes: '', created_at: new Date().toISOString() }, ...prev]);
+          count++;
+        }
+      }
+    }
+
+    setAddedCount(count);
+    setBulkUrls('');
+    setTimeout(() => setAddedCount(0), 3000);
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
       <header className="mb-6">
@@ -98,16 +122,56 @@ export function LiveAddView() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="mb-6">
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder="Paste YouTube URL and press Enter..."
-          className="w-full px-4 py-3 border border-black dark:border-white bg-transparent text-lg focus:outline-none"
-        />
-      </form>
+      {addedCount > 0 && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 text-sm z-50">
+          ✅ Added {addedCount} videos
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => { setMode('single'); setTimeout(() => inputRef.current?.focus(), 100); }}
+          className={`px-4 py-2 border border-black dark:border-white text-sm ${mode === 'single' ? 'bg-black text-white dark:bg-white dark:text-black' : ''}`}
+        >
+          Single
+        </button>
+        <button
+          onClick={() => { setMode('bulk'); setTimeout(() => textareaRef.current?.focus(), 100); }}
+          className={`px-4 py-2 border border-black dark:border-white text-sm ${mode === 'bulk' ? 'bg-black text-white dark:bg-white dark:text-black' : ''}`}
+        >
+          Bulk
+        </button>
+      </div>
+
+      {mode === 'single' ? (
+        <form onSubmit={handleSingleSubmit} className="mb-6">
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="Paste YouTube URL and press Enter..."
+            className="w-full px-4 py-3 border border-black dark:border-white bg-transparent text-lg focus:outline-none"
+          />
+        </form>
+      ) : (
+        <div className="mb-6">
+          <textarea
+            ref={textareaRef}
+            value={bulkUrls}
+            onChange={(e) => setBulkUrls(e.target.value)}
+            placeholder={`Paste YouTube URLs here, one per line:\nhttps://youtube.com/shorts/abc123\nhttps://youtube.com/shorts/def456`}
+            className="w-full h-48 px-4 py-3 border border-black dark:border-white bg-transparent font-mono text-sm resize-none focus:outline-none"
+            spellCheck={false}
+          />
+          <button
+            onClick={handleBulkAdd}
+            className="mt-2 px-4 py-2 bg-black text-white dark:bg-white dark:text-black border border-black dark:border-white text-sm"
+          >
+            Add All
+          </button>
+        </div>
+      )}
 
       <div className="border border-black dark:border-white p-4">
         <div className="flex items-center justify-between mb-3">
