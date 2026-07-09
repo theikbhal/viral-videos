@@ -160,7 +160,10 @@ export default function Home() {
       <header className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">Viral Videos</h1>
         <p className="text-[var(--muted)]">Collecting videos with 1M+ views</p>
-        <a href="/quick" className="text-sm underline hover:opacity-70">Quick Add →</a>
+        <div className="flex gap-4 mt-2">
+          <a href="/quick" className="text-sm underline hover:opacity-70">Quick Add →</a>
+          <a href="/bulk" className="text-sm underline hover:opacity-70">Bulk Add →</a>
+        </div>
       </header>
 
       <Stats total={pagination.total} />
